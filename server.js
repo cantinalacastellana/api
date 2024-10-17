@@ -3,6 +3,7 @@ const OpenAI = require('openai');
 const express = require('express');
 const { OPENAI_API_KEY, ASSISTANT_ID } = process.env;
 const cors = require('cors');
+const axios = require('axios'); // Make sure to install axios: npm install axios
 
 // Setup Express
 const app = express();
@@ -17,6 +18,17 @@ const openai = new OpenAI({
 // Assistant can be created via API or UI
 const assistantId = ASSISTANT_ID;
 let pollingInterval;
+
+// Function to fetch the menu
+async function fetch_menu() {
+    try {
+        const response = await axios.get('https://api.cantinalacastellana.com/menu');
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching menu:', error);
+        return null;
+    }
+}
 
 // Set up a Thread
 async function createThread() {
@@ -38,17 +50,21 @@ async function addMessage(threadId, message) {
 }
 
 async function runAssistant(threadId) {
-    console.log('Running assistant for thread: ' + threadId)
+    console.log('Running assistant for thread: ' + threadId);
+    const menu = await fetch_menu();
+    if (!menu) {
+        throw new Error('Failed to fetch menu');
+    }
     const response = await openai.beta.threads.runs.create(
         threadId,
         { 
-          assistant_id: assistantId
-          // Make sure to not overwrite the original instruction, unless you want to
+            assistant_id: assistantId,
+            tools: [{ type: "function", function: { name: "fetch_menu" } }],
+            additional_instructions: `Here's the current menu: ${JSON.stringify(menu)}. Use this information when responding to customer queries about menu items. The menu is in Spanish, so respond accordingly.`
         }
-      );
+    );
 
-    console.log(response)
-
+    console.log(response);
     return response;
 }
 
@@ -59,14 +75,14 @@ async function checkingStatus(res, threadId, runId) {
     );
 
     const status = runObject.status;
-    console.log(runObject)
+    console.log(runObject);
     console.log('Current status: ' + status);
     
     if(status == 'completed') {
         clearInterval(pollingInterval);
 
         const messagesList = await openai.beta.threads.messages.list(threadId);
-        let messages = []
+        let messages = [];
         
         messagesList.body.data.forEach(message => {
             messages.push(message.content);
@@ -85,13 +101,11 @@ app.get('/thread', (req, res) => {
     createThread().then(thread => {
         res.json({ threadId: thread.id });
     });
-})
+});
 
 app.post('/message', (req, res) => {
     const { message, threadId } = req.body;
     addMessage(threadId, message).then(message => {
-        // res.json({ messageId: message.id });
-
         // Run the assistant
         runAssistant(threadId).then(run => {
             const runId = run.id;           
@@ -100,9 +114,11 @@ app.post('/message', (req, res) => {
             pollingInterval = setInterval(() => {
                 checkingStatus(res, threadId, runId);
             }, 5000);
+        }).catch(error => {
+            res.status(500).json({ error: error.message });
         });
     });
-  });
+});
 
 // Start the server
 const PORT = process.env.PORT || 3000;
