@@ -4,6 +4,7 @@ const express = require('express');
 const { OPENAI_API_KEY, ASSISTANT_ID } = process.env;
 const cors = require('cors');
 const axios = require('axios');
+const { sendReservation, validateReservation } = require('./emails');
 
 // Setup Express
 const app = express();
@@ -30,7 +31,7 @@ async function fetch_menu() {
     }
 }
 
-// Define the tools array with the fetch_menu function
+// AI tools to be used in the assistant
 const tools = [
     {
         type: "function",
@@ -44,6 +45,37 @@ const tools = [
                 additionalProperties: false
             },
             strict: true,
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "make_reservation",
+            description: "Makes a restaurant reservation by sending an email",
+            parameters: {
+                type: "object",
+                properties: {
+                    name: {
+                        type: "string",
+                        description: "Full name of the person making the reservation"
+                    },
+                    phone: {
+                        type: "string",
+                        description: "Contact phone number"
+                    },
+                    date: {
+                        type: "string",
+                        description: "Date for the reservation in YYYY-MM-DD format (e.g., 2024-10-25)"
+                    },
+                    guests: {
+                        type: "integer",
+                        description: "Number of guests"
+                    }
+                },
+                required: ["name", "phone", "date", "guests"],
+                additionalProperties: false
+            },
+            strict: true
         }
     }
 ];
@@ -90,18 +122,7 @@ async function checkingStatus(res, threadId, runId) {
     
     console.log('Current status: ' + status);
     
-    if(status === 'completed') {
-        clearInterval(pollingInterval);
-
-        const messagesList = await openai.beta.threads.messages.list(threadId);
-        let messages = []
-        
-        messagesList.body.data.forEach(message => {
-            messages.push(message.content);
-        });
-
-        res.json({ messages });
-    } else if (status === 'requires_action') {
+    if(status === 'requires_action') {
         clearInterval(pollingInterval);
         console.log('Action required:', runObject.required_action);
         
@@ -116,6 +137,25 @@ async function checkingStatus(res, threadId, runId) {
                         tool_call_id: toolCall.id,
                         output: JSON.stringify(menu)
                     });
+                } else if (toolCall.function.name === 'make_reservation') {
+                    const reservationData = JSON.parse(toolCall.function.arguments);
+                    const validationErrors = validateReservation(reservationData);
+                    
+                    if (validationErrors.length > 0) {
+                        toolOutputs.push({
+                            tool_call_id: toolCall.id,
+                            output: JSON.stringify({
+                                success: false,
+                                errors: validationErrors
+                            })
+                        });
+                    } else {
+                        const result = await sendReservation(reservationData);
+                        toolOutputs.push({
+                            tool_call_id: toolCall.id,
+                            output: JSON.stringify(result)
+                        });
+                    }
                 }
             }
 
@@ -127,8 +167,19 @@ async function checkingStatus(res, threadId, runId) {
 
             pollingInterval = setInterval(() => {
                 checkingStatus(res, threadId, runId);
-            }, 5000);
+            }, 3000);
         }
+    } else if(status === 'completed') {
+        clearInterval(pollingInterval);
+
+        const messagesList = await openai.beta.threads.messages.list(threadId);
+        let messages = []
+        
+        messagesList.body.data.forEach(message => {
+            messages.push(message.content);
+        });
+
+        res.json({ messages });
     }
 }
 
