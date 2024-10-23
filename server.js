@@ -139,21 +139,22 @@ async function checkingStatus(res, threadId, runId) {
                     });
                 } else if (toolCall.function.name === 'make_reservation') {
                     const reservationData = JSON.parse(toolCall.function.arguments);
-                    const validationErrors = validateReservation(reservationData);
+                    const validation = validateReservation(reservationData);
                     
-                    if (validationErrors.length > 0) {
-                        toolOutputs.push({
-                            tool_call_id: toolCall.id,
-                            output: JSON.stringify({
-                                success: false,
-                                errors: validationErrors
-                            })
-                        });
-                    } else {
+                    if (validation.isValid) {
                         const result = await sendReservation(reservationData);
                         toolOutputs.push({
                             tool_call_id: toolCall.id,
                             output: JSON.stringify(result)
+                        });
+                    } else {
+                        toolOutputs.push({
+                            tool_call_id: toolCall.id,
+                            output: JSON.stringify({
+                                success: false,
+                                errors: validation.errors,
+                                currentDate: validation.currentDate
+                            })
                         });
                     }
                 }
