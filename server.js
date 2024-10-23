@@ -83,7 +83,7 @@ const tools = [
                     },
                     guests: {
                         type: "integer",
-                        description: "Number of guests (must be between 1 and 20 people)"
+                        description: "Number of guests"
                     }
                 },
                 required: ["name", "phone", "date", "guests"],
