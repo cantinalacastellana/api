@@ -1,3 +1,4 @@
+const { get } = require('https');
 const nodemailer = require('nodemailer');
 
 // Configuración del transporter de correo
@@ -121,5 +122,6 @@ function validateReservation(reservationData) {
 
 module.exports = {
     sendReservation,
-    validateReservation
+    validateReservation,
+    getCurrentMexicoDate
 };

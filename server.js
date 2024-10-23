@@ -4,7 +4,7 @@ const express = require('express');
 const { OPENAI_API_KEY, ASSISTANT_ID } = process.env;
 const cors = require('cors');
 const axios = require('axios');
-const { sendReservation, validateReservation } = require('./emails');
+const { sendReservation, validateReservation, getCurrentMexicoDate } = require('./emails');
 
 // Setup Express
 const app = express();
@@ -50,8 +50,22 @@ const tools = [
     {
         type: "function",
         function: {
+            name: "get_current_date",
+            description: "Returns the current date in Mexico City",
+            parameters: {
+                type: "object",
+                properties: {},
+                required: [],
+                additionalProperties: false
+            },
+            strict: true
+        }
+    },
+    {
+        type: "function",
+        function: {
             name: "make_reservation",
-            description: "Makes a restaurant reservation by sending an email",
+            description: "Makes a restaurant reservation. Call get_current_date first to check date availability",
             parameters: {
                 type: "object",
                 properties: {
@@ -61,15 +75,15 @@ const tools = [
                     },
                     phone: {
                         type: "string",
-                        description: "Contact phone number"
+                        description: "Contact phone number (e.g., +52 123-456-7890)"
                     },
                     date: {
                         type: "string",
-                        description: "Date for the reservation in YYYY-MM-DD format (e.g., 2024-10-25)"
+                        description: "Reservation date in YYYY-MM-DD format"
                     },
                     guests: {
                         type: "integer",
-                        description: "Number of guests"
+                        description: "Number of guests (must be between 1 and 20 people)"
                     }
                 },
                 required: ["name", "phone", "date", "guests"],
@@ -113,18 +127,11 @@ async function runAssistant(threadId) {
 }
 
 async function checkingStatus(res, threadId, runId) {
-    const runObject = await openai.beta.threads.runs.retrieve(
-        threadId,
-        runId
-    );
-
+    const runObject = await openai.beta.threads.runs.retrieve(threadId, runId);
     const status = runObject.status;
     
-    console.log('Current status: ' + status);
-    
-    if(status === 'requires_action') {
+    if (status === 'requires_action') {
         clearInterval(pollingInterval);
-        console.log('Action required:', runObject.required_action);
         
         if (runObject.required_action.type === 'submit_tool_outputs') {
             const toolCalls = runObject.required_action.submit_tool_outputs.tool_calls;
@@ -137,26 +144,34 @@ async function checkingStatus(res, threadId, runId) {
                         tool_call_id: toolCall.id,
                         output: JSON.stringify(menu)
                     });
-                } else if (toolCall.function.name === 'make_reservation') {
-                    const reservationData = JSON.parse(toolCall.function.arguments);
-                    const validation = validateReservation(reservationData);
-                    
-                    if (validation.isValid) {
-                        const result = await sendReservation(reservationData);
-                        toolOutputs.push({
-                            tool_call_id: toolCall.id,
-                            output: JSON.stringify(result)
-                        });
-                    } else {
-                        toolOutputs.push({
-                            tool_call_id: toolCall.id,
-                            output: JSON.stringify({
-                                success: false,
-                                errors: validation.errors,
-                                currentDate: validation.currentDate
-                            })
-                        });
-                    }
+                }
+                else if (toolCall.function.name === 'get_current_date') {
+                    const currentDate = new Date().toLocaleString('es-MX', {
+                        timeZone: 'America/Mexico_City',
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    });
+                    const isoDate = new Date(new Date().toLocaleString('en-US', {
+                        timeZone: 'America/Mexico_City'
+                    })).toISOString().split('T')[0];
+
+                    toolOutputs.push({
+                        tool_call_id: toolCall.id,
+                        output: JSON.stringify({
+                            currentDate: currentDate,
+                            isoDate: isoDate,
+                            message: `La fecha actual en Ciudad de México es ${currentDate}.`
+                        })
+                    });
+                }
+                else if (toolCall.function.name === 'make_reservation') {
+                    const result = await sendReservation(JSON.parse(toolCall.function.arguments));
+                    toolOutputs.push({
+                        tool_call_id: toolCall.id,
+                        output: JSON.stringify(result)
+                    });
                 }
             }
 
