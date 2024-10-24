@@ -8,17 +8,16 @@ const { sendReservation, validateReservation, getCurrentMexicoDate } = require('
 
 // Setup Express
 const app = express();
-app.use(express.json()); // Middleware to parse JSON bodies
-app.use(cors()); // Middleware to enable CORS
+app.use(express.json());
+app.use(cors());
 
 // Set up OpenAI Client
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
 });
 
-// Assistant can be created via API or UI
+// Assistant ID
 const assistantId = ASSISTANT_ID;
-let pollingInterval;
 
 // Function to fetch the menu
 async function fetch_menu() {
@@ -31,7 +30,7 @@ async function fetch_menu() {
     }
 }
 
-// AI tools to be used in the assistant
+// AI tools definition
 const tools = [
     {
         type: "function",
@@ -94,139 +93,146 @@ const tools = [
     }
 ];
 
-// Set up a Thread
+// Thread management functions
 async function createThread() {
     console.log('Creating a new thread...');
-    const thread = await openai.beta.threads.create();
-    return thread;
+    return await openai.beta.threads.create();
 }
 
 async function addMessage(threadId, message) {
-    console.log('Adding a new message to thread: ' + threadId);
-    const response = await openai.beta.threads.messages.create(
+    console.log('Adding message to thread:', threadId);
+    return await openai.beta.threads.messages.create(
         threadId,
-        {
-            role: "user",
-            content: message
-        }
+        { role: "user", content: message }
     );
-    return response;
 }
 
 async function runAssistant(threadId) {
-    console.log('Running assistant for thread: ' + threadId)
-    const response = await openai.beta.threads.runs.create(
+    console.log('Running assistant for thread:', threadId);
+    return await openai.beta.threads.runs.create(
         threadId,
-        { 
-          assistant_id: assistantId,
-          tools: tools,
-        }
-      );
-
-    return response;
+        { assistant_id: assistantId, tools: tools }
+    );
 }
 
-async function checkingStatus(res, threadId, runId) {
-    const runObject = await openai.beta.threads.runs.retrieve(threadId, runId);
-    const status = runObject.status;
+// Function to process tool calls
+async function processToolCalls(toolCalls) {
+    const toolOutputs = [];
     
-    if (status === 'requires_action') {
-        clearInterval(pollingInterval);
+    for (const toolCall of toolCalls) {
+        let output;
         
-        if (runObject.required_action.type === 'submit_tool_outputs') {
-            const toolCalls = runObject.required_action.submit_tool_outputs.tool_calls;
-            const toolOutputs = [];
-
-            for (const toolCall of toolCalls) {
-                if (toolCall.function.name === 'fetch_menu') {
-                    const menu = await fetch_menu();
-                    toolOutputs.push({
-                        tool_call_id: toolCall.id,
-                        output: JSON.stringify(menu)
-                    });
-                }
-                else if (toolCall.function.name === 'get_current_date') {
-                    const currentDate = new Date().toLocaleString('es-MX', {
-                        timeZone: 'America/Mexico_City',
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                    });
-                    const isoDate = new Date(new Date().toLocaleString('en-US', {
-                        timeZone: 'America/Mexico_City'
-                    })).toISOString().split('T')[0];
-
-                    toolOutputs.push({
-                        tool_call_id: toolCall.id,
-                        output: JSON.stringify({
-                            currentDate: currentDate,
-                            isoDate: isoDate,
-                            message: `La fecha actual en Ciudad de México es ${currentDate}.`
-                        })
-                    });
-                }
-                else if (toolCall.function.name === 'make_reservation') {
-                    const result = await sendReservation(JSON.parse(toolCall.function.arguments));
-                    toolOutputs.push({
-                        tool_call_id: toolCall.id,
-                        output: JSON.stringify(result)
-                    });
-                }
-            }
-
-            await openai.beta.threads.runs.submitToolOutputs(
-                threadId,
-                runId,
-                { tool_outputs: toolOutputs }
-            );
-
-            pollingInterval = setInterval(() => {
-                checkingStatus(res, threadId, runId);
-            }, 3000);
+        switch (toolCall.function.name) {
+            case 'fetch_menu':
+                output = await fetch_menu();
+                break;
+                
+            case 'get_current_date':
+                const currentDate = new Date().toLocaleString('es-MX', {
+                    timeZone: 'America/Mexico_City',
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                const isoDate = new Date(new Date().toLocaleString('en-US', {
+                    timeZone: 'America/Mexico_City'
+                })).toISOString().split('T')[0];
+                
+                output = {
+                    currentDate,
+                    isoDate,
+                    message: `La fecha actual en Ciudad de México es ${currentDate}.`
+                };
+                break;
+                
+            case 'make_reservation':
+                output = await sendReservation(JSON.parse(toolCall.function.arguments));
+                break;
+                
+            default:
+                output = { error: 'Función no reconocida' };
         }
-    } else if(status === 'completed') {
-        clearInterval(pollingInterval);
-
-        const messagesList = await openai.beta.threads.messages.list(threadId);
-        let messages = []
         
-        messagesList.body.data.forEach(message => {
-            messages.push(message.content);
+        toolOutputs.push({
+            tool_call_id: toolCall.id,
+            output: JSON.stringify(output)
         });
+    }
+    
+    return toolOutputs;
+}
 
-        res.json({ messages });
+// Function to handle the assistant's run status
+async function handleRunStatus(threadId, runId) {
+    let run;
+    let messages;
+    
+    while (true) {
+        run = await openai.beta.threads.runs.retrieve(threadId, runId);
+        console.log('Run status:', run.status);
+        
+        switch (run.status) {
+            case 'completed':
+                const messagesList = await openai.beta.threads.messages.list(threadId);
+                messages = messagesList.data.map(message => message.content);
+                return { status: 'completed', messages };
+                
+            case 'requires_action':
+                if (run.required_action.type === 'submit_tool_outputs') {
+                    const toolOutputs = await processToolCalls(
+                        run.required_action.submit_tool_outputs.tool_calls
+                    );
+                    
+                    await openai.beta.threads.runs.submitToolOutputs(
+                        threadId,
+                        runId,
+                        { tool_outputs: toolOutputs }
+                    );
+                }
+                break;
+                
+            case 'failed':
+            case 'expired':
+            case 'cancelled':
+                throw new Error(`Run failed with status: ${run.status}`);
+                
+            default:
+                await new Promise(resolve => setTimeout(resolve, 1000));
+        }
     }
 }
 
-//=========================================================
-//============== ROUTE SERVER =============================
-//=========================================================
-
-// Open a new thread
-app.get('/thread', (req, res) => {
-    createThread().then(thread => {
+// Routes
+app.get('/thread', async (req, res) => {
+    try {
+        const thread = await createThread();
         res.json({ threadId: thread.id });
-    });
-})
+    } catch (error) {
+        console.error('Error creating thread:', error);
+        res.status(500).json({ error: 'Error creating thread' });
+    }
+});
 
-app.post('/message', (req, res) => {
+app.post('/message', async (req, res) => {
     const { message, threadId } = req.body;
-    addMessage(threadId, message).then(message => {
-        // Run the assistant
-        runAssistant(threadId).then(run => {
-            const runId = run.id;           
-            
-            // Check the status
-            pollingInterval = setInterval(() => {
-                checkingStatus(res, threadId, runId);
-            }, 5000);
+    
+    try {
+        await addMessage(threadId, message);
+        const run = await runAssistant(threadId);
+        const result = await handleRunStatus(threadId, run.id);
+        res.json(result);
+    } catch (error) {
+        console.error('Error processing message:', error);
+        res.status(500).json({ 
+            error: 'Error processing message',
+            message: error.message 
         });
-    });
-  });
+    }
+});
 
-// Start the server
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
