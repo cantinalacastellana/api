@@ -14,18 +14,21 @@ const transporter = nodemailer.createTransport({
 
 // Función para obtener la fecha actual en México
 function getCurrentMexicoDate() {
-    const mexicoDate = new Date(new Date().toLocaleString('en-US', {
+    return new Date(new Date().toLocaleString('en-US', {
         timeZone: 'America/Mexico_City'
     }));
-    mexicoDate.setHours(0, 0, 0, 0);
-    return mexicoDate;
 }
 
 // Función para enviar la reservación
-async function sendReservation({name, phone, date, guests}) {
+async function sendReservation({ name, phone, date, guests }) {
     try {
+        // Ajustar la fecha recibida a la zona horaria de México
+        const reservationDate = new Date(date);
+        const mexicoTimeZoneOffset = getCurrentMexicoDate().getTimezoneOffset() * 60000; // Offset en milisegundos
+        const adjustedDate = new Date(reservationDate.getTime() + mexicoTimeZoneOffset);
+
         // Formatear la fecha para mejor legibilidad (solo fecha, sin hora)
-        const formattedDate = new Date(date).toLocaleDateString('es-MX', {
+        const formattedDate = adjustedDate.toLocaleDateString('es-MX', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
@@ -88,18 +91,23 @@ function validateReservation(reservationData) {
             const reservationDate = new Date(reservationData.date);
             reservationDate.setHours(0, 0, 0, 0);
 
-            if (isNaN(reservationDate.getTime())) {
+            // Ajustar la fecha a la zona horaria de México
+            const mexicoTimeZoneOffset = todayInMexico.getTimezoneOffset() * 60000;
+            const adjustedReservationDate = new Date(reservationDate.getTime() + mexicoTimeZoneOffset);
+            adjustedReservationDate.setHours(0, 0, 0, 0); // Asegúrate de que esté en el inicio del día
+
+            if (isNaN(adjustedReservationDate.getTime())) {
                 errors.push('El formato de la fecha es inválido');
             } else {
                 // Validar que la fecha no sea en el pasado o hoy
-                if (reservationDate <= todayInMexico) {
+                if (adjustedReservationDate <= todayInMexico) {
                     errors.push('La reservación debe ser para una fecha futura (a partir de mañana)');
                 }
 
                 // Validar que la fecha no sea más de 3 meses en el futuro
                 const maxDate = new Date(todayInMexico);
                 maxDate.setMonth(maxDate.getMonth() + 3);
-                if (reservationDate > maxDate) {
+                if (adjustedReservationDate > maxDate) {
                     errors.push('Las reservaciones solo se pueden hacer con hasta 3 meses de anticipación');
                 }
             }
