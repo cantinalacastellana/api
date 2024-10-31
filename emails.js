@@ -89,12 +89,10 @@ function validateReservation(reservationData) {
     } else {
         try {
             const reservationDate = new Date(reservationData.date);
-            reservationDate.setHours(0, 0, 0, 0);
 
             // Ajustar la fecha a la zona horaria de México
             const mexicoTimeZoneOffset = todayInMexico.getTimezoneOffset() * 60000;
             const adjustedReservationDate = new Date(reservationDate.getTime() + mexicoTimeZoneOffset);
-            adjustedReservationDate.setHours(0, 0, 0, 0); // Asegúrate de que esté en el inicio del día
 
             if (isNaN(adjustedReservationDate.getTime())) {
                 errors.push('El formato de la fecha es inválido');
