@@ -14,18 +14,17 @@ const transporter = nodemailer.createTransport({
 
 // Función para obtener la fecha actual en México
 function getCurrentMexicoDate() {
-    const mexicoDate = new Date(new Date().toLocaleString('en-US', {
+    return new Date(new Date().toLocaleString('en-US', {
         timeZone: 'America/Mexico_City'
     }));
-    mexicoDate.setHours(0, 0, 0, 0);
-    return mexicoDate;
 }
 
 // Función para enviar la reservación
-async function sendReservation({name, phone, date, guests}) {
+async function sendReservation({ name, phone, date, guests }) {
     try {
-        // Formatear la fecha para mejor legibilidad (solo fecha, sin hora)
-        const formattedDate = new Date(date).toLocaleDateString('es-MX', {
+        // Asegúrate de que la fecha está en el formato correcto y ajusta a la zona horaria de México
+        const reservationDate = new Date(date + 'T00:00:00-06:00'); // Ajusta la zona horaria según sea necesario
+        const formattedDate = reservationDate.toLocaleDateString('es-MX', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
@@ -85,7 +84,8 @@ function validateReservation(reservationData) {
         errors.push('La fecha es requerida');
     } else {
         try {
-            const reservationDate = new Date(reservationData.date);
+            const reservationDate = new Date(reservationData.date + 'T00:00:00-06:00'); // Asegúrate de la zona horaria
+            reservationDate.setHours(0, 0, 0, 0);
 
             if (isNaN(reservationDate.getTime())) {
                 errors.push('El formato de la fecha es inválido');
