@@ -1,10 +1,11 @@
 require("dotenv").config();
 const OpenAI = require('openai');
 const express = require('express');
-const { OPENAI_API_KEY, ASSISTANT_ID } = process.env;
+const { OPENAI_API_KEY, ASSISTANT_ID, WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, ADMIN_PHONE_NUMBER } = process.env;
 const cors = require('cors');
 const axios = require('axios');
 const { sendReservation, validateReservation, getCurrentMexicoDate } = require('./emails');
+const { sendWhatsAppMessage } = require('./whatsapp');
 
 // Setup Express
 const app = express();
@@ -226,6 +227,22 @@ app.post('/message', async (req, res) => {
         console.error('Error processing message:', error);
         res.status(500).json({ 
             error: 'Error processing message',
+            message: error.message 
+        });
+    }
+});
+
+// Whatsapp test
+app.post('/test-whatsapp', async (req, res) => {
+    const { message } = req.body;
+    
+    try {
+        const result = await sendWhatsAppMessage(ADMIN_PHONE_NUMBER, message || "Mensaje de prueba desde la Cantina");
+        res.json(result);
+    } catch (error) {
+        console.error('Error sending WhatsApp test message:', error);
+        res.status(500).json({ 
+            error: 'Error sending WhatsApp message',
             message: error.message 
         });
     }

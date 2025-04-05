@@ -1,5 +1,6 @@
 const { get } = require('https');
 const nodemailer = require('nodemailer');
+const { notifyReservationWhatsApp } = require('./whatsapp');
 
 // Configuración del transporter de correo
 const transporter = nodemailer.createTransport({
@@ -50,13 +51,23 @@ async function sendReservation({ name, phone, date, guests }) {
             text: emailContent
         });
 
+        // Enviar notificación por WhatsApp
+        const whatsappResult = await notifyReservationWhatsApp({
+            name,
+            phone,
+            date,
+            guests,
+            formattedDate
+        });
+
         return {
             success: true,
             messageId: info.messageId,
+            whatsappStatus: whatsappResult,
             formattedDate: formattedDate // Incluimos la fecha formateada en la respuesta
         };
     } catch (error) {
-        console.error('Error sending reservation email:', error);
+        console.error('Error sending reservation:', error);
         return {
             success: false,
             error: error.message
