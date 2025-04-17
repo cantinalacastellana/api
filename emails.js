@@ -1,6 +1,6 @@
 const { get } = require('https');
 const nodemailer = require('nodemailer');
-const { notifyReservationWhatsApp } = require('./whatsapp');
+const { notifyReservationWhatsApp } = require('./twilio');
 
 // Configuración del transporter de correo
 const transporter = nodemailer.createTransport({
@@ -51,7 +51,7 @@ async function sendReservation({ name, phone, date, guests }) {
             text: emailContent
         });
 
-        // Enviar notificación por WhatsApp
+        // Enviar notificación por WhatsApp usando Twilio
         const whatsappResult = await notifyReservationWhatsApp({
             name,
             phone,

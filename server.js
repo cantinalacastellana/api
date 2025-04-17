@@ -1,11 +1,18 @@
 require("dotenv").config();
 const OpenAI = require('openai');
 const express = require('express');
-const { OPENAI_API_KEY, ASSISTANT_ID, WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, ADMIN_PHONE_NUMBER } = process.env;
+const { 
+    OPENAI_API_KEY, 
+    ASSISTANT_ID,
+    TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN,
+    TWILIO_WHATSAPP_FROM,
+    ADMIN_WHATSAPP_NUMBER
+} = process.env;
 const cors = require('cors');
 const axios = require('axios');
 const { sendReservation, validateReservation, getCurrentMexicoDate } = require('./emails');
-const { sendWhatsAppMessage } = require('./whatsapp');
+const { sendWhatsAppMessage, sendTemplateMessage } = require('./twilio');
 
 // Setup Express
 const app = express();
@@ -234,10 +241,27 @@ app.post('/message', async (req, res) => {
 
 // Whatsapp test
 app.post('/test-whatsapp', async (req, res) => {
-    const { message } = req.body;
+    const { message, useTemplate } = req.body;
     
     try {
-        const result = await sendWhatsAppMessage(ADMIN_PHONE_NUMBER, message || "Mensaje de prueba desde la Cantina");
+        let result;
+        
+        if (useTemplate && process.env.TWILIO_TEMPLATE_SID) {
+            // Probar envío con plantilla
+            const variables = req.body.variables || { "1": "valor1", "2": "valor2" };
+            result = await sendTemplateMessage(
+                ADMIN_WHATSAPP_NUMBER, 
+                process.env.TWILIO_TEMPLATE_SID, 
+                variables
+            );
+        } else {
+            // Probar envío de mensaje simple
+            result = await sendWhatsAppMessage(
+                ADMIN_WHATSAPP_NUMBER, 
+                message || "Mensaje de prueba desde la Cantina La Castellana"
+            );
+        }
+        
         res.json(result);
     } catch (error) {
         console.error('Error sending WhatsApp test message:', error);
