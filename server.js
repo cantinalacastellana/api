@@ -12,7 +12,7 @@ const {
 const cors = require('cors');
 const axios = require('axios');
 const { sendReservation, validateReservation, getCurrentMexicoDate } = require('./emails');
-const { sendWhatsAppMessage, sendTemplateMessage } = require('./twilio');
+const { sendWhatsAppMessage, sendTemplateMessage, notifyReservationWhatsApp } = require('./twilio');
 
 // Setup Express
 const app = express();
