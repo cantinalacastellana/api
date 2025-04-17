@@ -53,7 +53,6 @@ async function sendReservation({ name, phone, date, guests }) {
         return {
             success: true,
             messageId: info.messageId,
-            whatsappStatus: whatsappResult,
             formattedDate: formattedDate // Incluimos la fecha formateada en la respuesta
         };
     } catch (error) {
