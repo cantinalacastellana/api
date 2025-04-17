@@ -155,7 +155,20 @@ async function processToolCalls(toolCalls) {
                 break;
                 
             case 'make_reservation':
-                output = await sendReservation(JSON.parse(toolCall.function.arguments));
+                const reservationData = JSON.parse(toolCall.function.arguments);
+                const reservationResult = await sendReservation(reservationData);
+
+                if (reservationResult.success) {
+                    await notifyReservationWhatsApp({
+                        ...reservationData,
+                        formattedDate: reservationResult.formattedDate
+                    });
+                }
+                
+                output = {
+                    ...reservationResult,
+                    whatsappSent: reservationResult.success
+                };
                 break;
                 
             default:
