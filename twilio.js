@@ -5,39 +5,11 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM;  // En formato 'whatsapp:+14155238886'
 const ADMIN_WHATSAPP_NUMBER = process.env.ADMIN_WHATSAPP_NUMBER;  // En formato 'whatsapp:+5215539017155'
+// Template SID para las reservaciones - debe estar configurado en la consola de Twilio
+const RESERVATION_TEMPLATE_SID = process.env.TWILIO_RESERVATION_TEMPLATE_SID;
 
 // Cliente de Twilio
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-
-/**
- * Envía un mensaje de WhatsApp utilizando Twilio
- * @param {string} to - Número de WhatsApp destino en formato 'whatsapp:+1234567890'
- * @param {string} body - Contenido del mensaje
- * @returns {Promise} - Resultado de la operación
- */
-async function sendWhatsAppMessage(to, body) {
-    try {
-        // Si no se proporciona un número destino, usar el número del administrador
-        const targetPhone = to || ADMIN_WHATSAPP_NUMBER;
-        
-        const message = await twilioClient.messages.create({
-            from: TWILIO_WHATSAPP_FROM,
-            body: body,
-            to: targetPhone
-        });
-
-        return {
-            success: true,
-            messageId: message.sid
-        };
-    } catch (error) {
-        console.error('Error sending WhatsApp message:', error);
-        return {
-            success: false,
-            error: error.message
-        };
-    }
-}
 
 /**
  * Envía un mensaje de WhatsApp con plantilla utilizando Twilio
@@ -71,29 +43,21 @@ async function sendTemplateMessage(to, templateSid, variables) {
 }
 
 /**
- * Notifica sobre una nueva reservación por WhatsApp
+ * Notifica sobre una nueva reservación por WhatsApp usando una plantilla
  * @param {object} reservation - Datos de la reservación
  * @returns {Promise} - Resultado de la operación
  */
 async function notifyReservationWhatsApp({ name, phone, date, guests, formattedDate }) {
-    // Opción 1: Mensaje básico de texto
-    const message = `
-📅 *Nueva Reservación* 📅
-
-*Nombre:* ${name}
-*Teléfono:* ${phone}
-*Fecha:* ${formattedDate || date}
-*Personas:* ${guests}
-
-Reservación registrada exitosamente.
-`.trim();
-
-    return await sendWhatsAppMessage(ADMIN_WHATSAPP_NUMBER, message);
+    // Después del 1 de abril de 2025, solo se pueden usar plantillas para mensajes iniciados por el negocio
+    if (!RESERVATION_TEMPLATE_SID) {
+        console.error('TWILIO_RESERVATION_TEMPLATE_SID not configured');
+        return {
+            success: false,
+            error: 'Template SID not configured'
+        };
+    }
     
-    // Opción 2: Si prefieres usar una plantilla (descomenta y configura)
-    /*
-    const RESERVATION_TEMPLATE_SID = process.env.TWILIO_RESERVATION_TEMPLATE_SID;
-    
+    // Variables para la plantilla - ajusta según la estructura de tu plantilla aprobada
     const variables = {
         "1": name,
         "2": phone,
@@ -102,11 +66,10 @@ Reservación registrada exitosamente.
     };
     
     return await sendTemplateMessage(ADMIN_WHATSAPP_NUMBER, RESERVATION_TEMPLATE_SID, variables);
-    */
 }
 
+// Ya no exportamos sendWhatsAppMessage porque no se puede usar para mensajes iniciados por el negocio
 module.exports = {
-    sendWhatsAppMessage,
     sendTemplateMessage,
     notifyReservationWhatsApp
 };

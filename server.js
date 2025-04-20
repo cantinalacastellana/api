@@ -12,7 +12,7 @@ const {
 const cors = require('cors');
 const axios = require('axios');
 const { sendReservation, validateReservation, getCurrentMexicoDate } = require('./emails');
-const { sendWhatsAppMessage, sendTemplateMessage, notifyReservationWhatsApp } = require('./twilio');
+const { sendTemplateMessage, notifyReservationWhatsApp } = require('./twilio');
 
 // Setup Express
 const app = express();
@@ -252,28 +252,32 @@ app.post('/message', async (req, res) => {
     }
 });
 
-// Whatsapp test
+/// Whatsapp test endpoint - updated to use templates only
 app.post('/test-whatsapp', async (req, res) => {
     const { message, useTemplate } = req.body;
     
     try {
-        let result;
-        
-        if (useTemplate && process.env.TWILIO_TEMPLATE_SID) {
-            // Probar envío con plantilla
-            const variables = req.body.variables || { "1": "valor1", "2": "valor2" };
-            result = await sendTemplateMessage(
-                ADMIN_WHATSAPP_NUMBER, 
-                process.env.TWILIO_TEMPLATE_SID, 
-                variables
-            );
-        } else {
-            // Probar envío de mensaje simple
-            result = await sendWhatsAppMessage(
-                ADMIN_WHATSAPP_NUMBER, 
-                message || "Mensaje de prueba desde la Cantina La Castellana"
-            );
+        // We now always use templates since free-form messages are no longer supported
+        // Check if template SID exists
+        if (!process.env.TWILIO_TEMPLATE_SID) {
+            return res.status(400).json({
+                success: false,
+                error: 'TWILIO_TEMPLATE_SID not configured. WhatsApp now requires templates for business-initiated messages.'
+            });
         }
+        
+        // Use provided variables or defaults
+        const variables = req.body.variables || { 
+            "1": "Mensaje de prueba", 
+            "2": new Date().toLocaleString('es-MX'), 
+            "3": "Cantina La Castellana" 
+        };
+        
+        const result = await sendTemplateMessage(
+            ADMIN_WHATSAPP_NUMBER,
+            process.env.TWILIO_TEMPLATE_SID,
+            variables
+        );
         
         res.json(result);
     } catch (error) {
